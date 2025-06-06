@@ -1,0 +1,87 @@
+# --- Setup and Working Directory ---
+# It's recommended to set the working directory to where you want to save files.
+# However, you can also specify the full path in the write.csv function directly,
+# which is what we'll do for the output file here to match your request.
+# setwd("F:/modelos_ejercicio") # You can keep this or remove it if not needed for other operations
+
+# Define the output directory
+output_directory <- "E:/2025/TESIS/R"
+
+# Ensure the output directory exists
+if (!dir.exists(output_directory)) {
+  dir.create(output_directory, recursive = TRUE)
+  message(paste("Created output directory:", output_directory))
+}
+
+# --- Install and Load Packages ---
+if (!requireNamespace("rgbif", quietly = TRUE)) {
+  install.packages("rgbif")
+}
+library(rgbif)
+
+if (!requireNamespace("dplyr", quietly = TRUE)) {
+  install.packages("dplyr")
+}
+library(dplyr)
+
+if (!requireNamespace("here", quietly = TRUE)) {
+  install.packages("here")
+}
+library(here) # While 'here' is good for relative paths, we'll use full path for output.
+
+# --- Define Species List ---
+species_list <- c(
+  "Muhlenbergia peruviana (P.Beauv.) Steud.",
+  "Festuca orthophylla Pilg.",
+  "Parastrephia lucida (Meyen) Cabrera",
+  "Parastrephia quadrangularis (Meyen) Cabrera",
+  "Jarava ichu Ruiz & Pav.",
+  "Cinnagrostis vicunarum (Wedd.) P.M.Peterson, Soreng, Romasch. & Barberá",
+  "Calamagrostis vicunarum (Wedd.) Pilg.",
+  "Senecio nutans Sch.Bip.",
+  "Festuca orthophylla Pilg.",
+  "Festuca dolichophylla J.Presl"
+)
+
+# --- Initialize an Empty List to Store Data ---
+all_species_data <- list()
+
+# --- Loop Through Species and Download Data ---
+for (species_name in species_list) {
+  message(paste("Downloading data for:", species_name))
+  
+  species_data <- tryCatch({
+    occ_data(scientificName = species_name, hasCoordinate = TRUE, limit = 100000)$data
+  }, error = function(e) {
+    message(paste("Error downloading data for", species_name, ":", e$message))
+    return(NULL)
+  })
+  
+  if (!is.null(species_data) && nrow(species_data) > 0) {
+    species_data_filtered <- species_data %>%
+      dplyr::select(
+        "acceptedScientificName",
+        "decimalLongitude",
+        "decimalLatitude"
+      )
+    
+    all_species_data[[species_name]] <- species_data_filtered
+  } else {
+    message(paste("No data or error occurred for:", species_name))
+  }
+}
+
+# --- Combine All Species Data ---
+final_combined_data <- bind_rows(all_species_data)
+
+# --- Save Combined Data to CSV in the Specified Directory ---
+if (!is.null(final_combined_data) && nrow(final_combined_data) > 0) {
+  output_file_path <- file.path(output_directory, "ocurrencias_multiples_especies.csv")
+  write.csv(final_combined_data,
+            file = output_file_path,
+            row.names = FALSE
+  )
+  message(paste("All species data combined and saved to:", output_file_path))
+} else {
+  message("No data was successfully downloaded and combined. CSV not created.")
+}
