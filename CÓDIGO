@@ -1,19 +1,13 @@
-# --- Setup and Working Directory ---
-# It's recommended to set the working directory to where you want to save files.
-# However, you can also specify the full path in the write.csv function directly,
-# which is what we'll do for the output file here to match your request.
-# setwd("F:/modelos_ejercicio") # You can keep this or remove it if not needed for other operations
-
-# Define the output directory
+# Definir el directorio de salida
 output_directory <- "E:/2025/TESIS/R"
 
-# Ensure the output directory exists
+# Asegurar que el directorio existe
 if (!dir.exists(output_directory)) {
   dir.create(output_directory, recursive = TRUE)
   message(paste("Created output directory:", output_directory))
 }
 
-# --- Install and Load Packages ---
+# --- Instalar y cargar paquetes ---
 if (!requireNamespace("rgbif", quietly = TRUE)) {
   install.packages("rgbif")
 }
@@ -27,9 +21,9 @@ library(dplyr)
 if (!requireNamespace("here", quietly = TRUE)) {
   install.packages("here")
 }
-library(here) # While 'here' is good for relative paths, we'll use full path for output.
+library(here) 
 
-# --- Define Species List ---
+# Definir lista de especies (Nombres de GBIF)
 species_list <- c(
   "Muhlenbergia peruviana (P.Beauv.) Steud.",
   "Festuca orthophylla Pilg.",
@@ -39,14 +33,13 @@ species_list <- c(
   "Cinnagrostis vicunarum (Wedd.) P.M.Peterson, Soreng, Romasch. & Barberá",
   "Calamagrostis vicunarum (Wedd.) Pilg.",
   "Senecio nutans Sch.Bip.",
-  "Festuca orthophylla Pilg.",
   "Festuca dolichophylla J.Presl"
 )
 
-# --- Initialize an Empty List to Store Data ---
+# --- Crear una lista vacia para instalar la data ---
 all_species_data <- list()
 
-# --- Loop Through Species and Download Data ---
+# --- Hacer un loop con cada especie para cargar la data --- 
 for (species_name in species_list) {
   message(paste("Downloading data for:", species_name))
   
@@ -71,10 +64,10 @@ for (species_name in species_list) {
   }
 }
 
-# --- Combine All Species Data ---
+# --- Combinar la data de todas las especies ---
 final_combined_data <- bind_rows(all_species_data)
 
-# --- Save Combined Data to CSV in the Specified Directory ---
+# --- Guardar data combinada en archivo .csv en el directorio ---
 if (!is.null(final_combined_data) && nrow(final_combined_data) > 0) {
   output_file_path <- file.path(output_directory, "ocurrencias_multiples_especies.csv")
   write.csv(final_combined_data,
