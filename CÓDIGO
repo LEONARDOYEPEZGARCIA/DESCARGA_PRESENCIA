@@ -33,7 +33,8 @@ species_list <- c(
   "Cinnagrostis vicunarum (Wedd.) P.M.Peterson, Soreng, Romasch. & Barberá",
   "Calamagrostis vicunarum (Wedd.) Pilg.",
   "Senecio nutans Sch.Bip.",
-  "Festuca dolichophylla J.Presl"
+  "Festuca dolichophylla J.Presl",
+  "Margyricarpus cristatus Britton"
 )
 
 # --- Crear una lista vacia para instalar la data ---
