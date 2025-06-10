@@ -1,0 +1,293 @@
+# --- Setup and Library Loading ---
+setwd("E:/2025/TESIS") # Set the base working directory
+dir() # List contents of the working directory
+
+requiredPackages <- c(
+  # GENERAL USE LIBRARIES --------#
+  "here", # Library for reproducible workflow
+  "rstudioapi", # Library for reproducible workflow
+  "maptools", # plotting world map (Note: maptools is becoming deprecated, consider sf for plotting if possible)
+  "ggplot2", # for plotting
+  
+  # Download presence data--------#
+  "robis", # Specific library to get the occurrence data (not used in this specific loop, but good to keep if used elsewhere)
+  "rgbif", # Specific library to get the occurrence data (not used in this specific loop, but good to keep if used elsewhere)
+  "CoordinateCleaner", # to remove outlier
+  "rgdal", # to work with Spatial data (Note: rgdal is becoming deprecated, sf is preferred)
+  "sf", # to work with spatial data (shapefiles)
+  "data.table", # for reading data,
+  "dplyr", # for reading data,
+  "tidyr", # for reading data
+  "marmap", # bathymetry getNOAA.bathy remotes::install_github("ericpante/marmap") (not used in this specific loop)
+  
+  # Create pseudo-absence data--------#
+  "tidyverse", # (already includes dplyr, tidyr, ggplot2 etc.)
+  "scales",
+  "ggridges",
+  "maps", # some basic country maps
+  "mapdata", # higher resolution maps
+  "mapproj",
+  "mapplots", # ICES rectangles
+  "gridExtra",
+  "lubridate",
+  "raster" # to work with Spatial data
+)
+
+# Function to install and load packages
+install_load_function <- function(pkg) {
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg))
+    install.packages(new.pkg, dependencies = TRUE)
+  sapply(pkg, require, character.only = TRUE)
+}
+
+install_load_function(requiredPackages)
+
+# Ensure 'sf' is loaded explicitly as some functions (e.g., st_as_sf) are from it
+library(sf)
+# Ensure 'raster' is loaded explicitly
+library(raster)
+
+# ---
+## Load Study Area Polygon
+# ---
+# Ensure this directory exists or create it if not
+shape_dir <- "SHAPE"
+if (!dir.exists(shape_dir)) {
+  dir.create(shape_dir, recursive = TRUE)
+  message(paste("Created directory:", shape_dir))
+}
+
+# Define the file path for the .RData containing the spatial polygon.
+file_path_study_area <- file.path(shape_dir, "study_area.RData")
+
+if (file.exists(file_path_study_area)) {
+  load(file_path_study_area)
+  if (exists("study_area")) {
+    study_area <- st_as_sf(study_area) # CONVERT TO SF HERE
+    message(paste("Successfully loaded 'study_area' from:", file_path_study_area, "and converted to sf object."))
+    
+    if (!st_is_valid(study_area)) {
+      message("Warning: The loaded 'study_area' geometry is not valid. Attempting to make it valid...")
+      study_area <- st_make_valid(study_area)
+      if (st_is_valid(study_area)) {
+        message("'study_area' successfully made valid.")
+      } else {
+        message("Error: Failed to make 'study_area' valid. Spatial operations may still encounter issues.")
+      }
+    }
+    
+  } else {
+    message(paste("Warning: '", file_path_study_area, "' was loaded but did not contain an object named 'study_area'. Please check the file content.", sep = ""))
+    stop("Study area object not found in RData file.")
+  }
+} else {
+  message(paste("Error: '", file_path_study_area, "' not found. Cannot load the spatial polygon. Please ensure the file exists in the correct directory or run the code to generate it.", sep = ""))
+  stop("Study area polygon (study_area.RData) not found. Please create it or adjust the path.")
+}
+
+plot(st_geometry(study_area))
+
+
+# ---
+## Define Input and Output Directories for Species Data
+# ---
+input_presencia_dir <- "E:/2025/TESIS/R" # Directory where your occurrence CSVs are located
+output_presencia_dir <- file.path("R", "PRESENCIA_R") # Output directory for processed RData/CSV
+
+# Ensure output directory exists
+if (!dir.exists(output_presencia_dir)) {
+  dir.create(output_presencia_dir, recursive = TRUE)
+  message(paste("Created output directory:", output_presencia_dir))
+}
+
+# Get list of species CSV files
+species_files <- list.files(
+  path = input_presencia_dir,
+  pattern = "^ocurrencias_.*\\.csv$",
+  full.names = TRUE
+)
+
+if (length(species_files) == 0) {
+  stop(paste("No species occurrence CSV files found in:", input_presencia_dir, ". Please check the directory and file names."))
+} else {
+  message(paste("\nFound", length(species_files), "species occurrence files to process."))
+}
+
+# ---
+## Main Loop for Processing Each Species
+# ---
+
+# Function to process a single species' data
+process_species_data <- function(file_path, study_area_polygon, output_base_dir) {
+  # Extract species name from filename for output
+  filename <- basename(file_path)
+  species_scientific_name_raw <- sub("^ocurrencias_", "", filename)
+  species_scientific_name <- tools::file_path_sans_ext(species_scientific_name_raw)
+  message(paste("\nProcessing species:", species_scientific_name))
+  
+  # 1. Load Species Presence Data
+  occurrence_data <- tryCatch({
+    data.table::fread(file_path, header = TRUE, sep = ",", quote = "")
+  }, error = function(e) {
+    message(paste("Error reading CSV for", species_scientific_name, "from", file_path, ":", e$message))
+    message("This often means malformed CSV data (e.g., extra commas, missing headers).")
+    return(NULL)
+  })
+  
+  if (is.null(occurrence_data)) {
+    return(NULL)
+  }
+  
+  occurrence_data <- as.data.frame(occurrence_data)
+  
+  # Eliminar comillas dobles al principio, al final y comillas dobles duplicadas
+  names(occurrence_data) <- gsub("^\"+|\"\"+|\"$", "", names(occurrence_data))
+  message(paste(" - Nombres de columnas limpiados:", paste(names(occurrence_data), collapse = ", ")))
+  print(paste("DEBUG 1: Nombres de columnas en occurrence_data DESPUES de la limpieza:", paste(names(occurrence_data), collapse = ", ")))
+  
+  required_cols <- c("decimalLongitude", "decimalLatitude", "acceptedScientificName")
+  if (!all(required_cols %in% names(occurrence_data))) {
+    warning(paste("Skipping", species_scientific_name, ": Missing required columns (", paste(required_cols, collapse = ", "), ") after reading CSV."))
+    message(paste("Available columns in CSV after cleaning:", paste(names(occurrence_data), collapse = ", ")))
+    return(NULL)
+  }
+  
+  occurrence_data <- occurrence_data %>%
+    dplyr::mutate(occurrenceStatus = 1)
+  
+  # 2. Outlier Removal (using CoordinateCleaner)
+  message(paste(" - Running outlier detection for", species_scientific_name, "..."))
+  out.dist <- cc_outl(x = occurrence_data,
+                      lon = "decimalLongitude", lat = "decimalLatitude",
+                      species = "acceptedScientificName",
+                      method = "distance", tdi = 1000,
+                      thinning = TRUE, thinning_res = 0.5,
+                      value = "flagged")
+  
+  occurrence_data <- occurrence_data[out.dist, ]
+  message(paste(" - Outliers removed. Records remaining:", nrow(occurrence_data)))
+  
+  # 3. Remove Duplicated Records
+  coords_for_dups <- cbind(occurrence_data$decimalLongitude, occurrence_data$decimalLatitude)
+  occurrence_data <- occurrence_data[!duplicated(coords_for_dups), ]
+  message(paste(" - Duplicates removed. Records remaining:", nrow(occurrence_data)))
+  
+  # 4. Filter to Study Area (USING SF CONSISTENTLY)
+  occurrence_sf <- st_as_sf(occurrence_data, coords = c("decimalLongitude", "decimalLatitude"), crs = st_crs(study_area_polygon))
+  
+  message(paste(" - Filtering occurrences to study area for", species_scientific_name, "..."))
+  
+  filtered_occurrence_sf <- st_intersection(occurrence_sf, study_area_polygon)
+  
+  # Extraer las coordenadas (Longitud y Latitud) directamente de la geometría del objeto sf
+  coords_from_sf <- as.data.frame(st_coordinates(filtered_occurrence_sf))
+  names(coords_from_sf) <- c("LON_extracted", "LAT_extracted")
+  
+  # Obtener los atributos que NO son la geometría
+  filtered_attributes_data <- as.data.frame(st_drop_geometry(filtered_occurrence_sf))
+  
+  # Combinar los atributos filtrados con las coordenadas extraídas
+  filtered_full_data <- cbind(filtered_attributes_data, coords_from_sf)
+  
+  message(paste(" - Filtered by study area. Records remaining:", nrow(filtered_full_data)))
+  
+  if (nrow(filtered_full_data) == 0) {
+    warning(paste("No records remaining for", species_scientific_name, "after filtering to study area. Skipping pseudo-absence generation and saving."))
+    return(NULL)
+  }
+  
+  # Manejar F_AREA
+  if ("Shape_Area" %in% names(filtered_full_data)) {
+    names(filtered_full_data)[names(filtered_full_data) == "Shape_Area"] <- "F_AREA"
+  } else if (!"F_AREA" %in% names(filtered_full_data)) {
+    warning(paste("Shape_Area not found in filtered data for", species_scientific_name, ". Setting F_AREA to NA."))
+    filtered_full_data$F_AREA <- NA
+  }
+  
+  print(paste("DEBUG 2: Nombres de columnas en filtered_full_data ANTES de dplyr::select:", paste(names(filtered_full_data), collapse = ", ")))
+  
+  # Crear df0 con las columnas deseadas y renombrando LON/LAT
+  df0 <- filtered_full_data %>%
+    dplyr::select(
+      "F_AREA",
+      "acceptedScientificName",
+      LON = "LON_extracted",
+      LAT = "LAT_extracted",
+      "occurrenceStatus"
+    )
+  
+  # 5. Prepare for Maxent (output CSV for presence points)
+  occu_maxent <- df0 %>%
+    dplyr::select("acceptedScientificName", "LON", "LAT")
+  
+  maxent_output_filename <- paste0("occu_maxent_", species_scientific_name, ".csv")
+  write.csv(occu_maxent, file = file.path(output_base_dir, maxent_output_filename), row.names = FALSE)
+  message(paste(" - Maxent presence data saved to:", file.path(output_base_dir, maxent_output_filename)))
+  
+  # 6. Generate Pseudo-Absence Data
+  df.sf_for_pseudo <- st_as_sf(df0, coords = c("LON", "LAT"), crs = st_crs(study_area_polygon))
+  
+  study_area.sf_for_proj <- study_area_polygon
+  
+  if (nrow(df.sf_for_pseudo) == 0) {
+    warning(paste("No points left for UTM conversion for", species_scientific_name, ". Skipping pseudo-absence generation."))
+    return(NULL)
+  }
+  (EPSG_2_UTM <- lonlat2UTM(c(mean(st_coordinates(df.sf_for_pseudo)[,1]), mean(st_coordinates(df.sf_for_pseudo)[,2]))))
+  
+  aux <- st_transform(study_area.sf_for_proj, EPSG_2_UTM)
+  df.sf.utm <- st_transform(df.sf_for_pseudo, EPSG_2_UTM)
+  
+  set.seed(1)
+  rp.sf <- st_sample(aux, size = dim(df.sf.utm)[1], type = "random")
+  
+  rp.sf <- st_transform(rp.sf, 4326)
+  rp <- as.data.frame(st_coordinates(rp.sf))
+  
+  pseudo <- data.frame(
+    acceptedScientificName = species_scientific_name,
+    LON = rp$X,
+    LAT = rp$Y,
+    occurrenceStatus = 0
+  )
+  message(paste(" - Generated", nrow(pseudo), "pseudo-absence points for", species_scientific_name))
+  
+  # 7. Join Presence and Pseudo-Absence Data
+  # --- NUEVA LÓGICA PARA UNIR DF0 Y PSEUDO ---
+  # Seleccionar solo las columnas que pseudo tiene para hacer rbind
+  df0_for_rbind <- df0 %>%
+    dplyr::select("acceptedScientificName", "LON", "LAT", "occurrenceStatus")
+  
+  # Ahora df0_for_rbind y pseudo tienen las mismas 4 columnas
+  PAdata <- rbind(df0_for_rbind, pseudo)
+  # ------------------------------------------
+  
+  # 8. Save the final Presence/Absence dataset
+  pa_output_filename <- paste0("PA_data_", species_scientific_name, ".RData")
+  save(list = "PAdata", file = file.path(output_base_dir, pa_output_filename))
+  message(paste(" - Combined PA data saved to:", file.path(output_base_dir, pa_output_filename)))
+  
+  return(TRUE)
+}
+
+# Function to find your UTM zone (provided in original script)
+lonlat2UTM = function(lonlat) {
+  utm = (floor((lonlat[1] + 180) / 6) %% 60) + 1
+  if(lonlat[2] > 0) {
+    utm + 32600 # Northern Hemisphere
+  } else{
+    utm + 32700 # Southern Hemisphere
+  }
+}
+
+# ---
+## Run the Loop for All Species Files
+# ---
+for (s_file in species_files) {
+  process_species_data(file_path = s_file,
+                       study_area_polygon = study_area,
+                       output_base_dir = output_presencia_dir)
+}
+
+message("\nAll species occurrence files processed.")
