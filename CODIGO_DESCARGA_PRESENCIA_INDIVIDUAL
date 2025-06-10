@@ -1,0 +1,88 @@
+# --- Setup and Working Directory ---
+# setwd("F:/modelos_ejercicio")
+
+# Define the output directory for individual species CSVs
+output_directory <- "E:/2025/TESIS/R" # Ensure this directory exists or will be created
+
+# Ensure the output directory exists
+if (!dir.exists(output_directory)) {
+  dir.create(output_directory, recursive = TRUE)
+  message(paste("Created output directory:", output_directory))
+}
+
+# --- Install and Load Packages ---
+if (!requireNamespace("rgbif", quietly = TRUE)) {
+  install.packages("rgbif")
+}
+library(rgbif)
+
+if (!requireNamespace("dplyr", quietly = TRUE)) {
+  install.packages("dplyr")
+}
+library(dplyr)
+
+# 'here' package is not strictly necessary if you specify full paths,
+# but keeping it loaded if you use it elsewhere.
+if (!requireNamespace("here", quietly = TRUE)) {
+  install.packages("here")
+}
+library(here)
+
+# --- Define Species List ---
+species_list <- c(
+  "Muhlenbergia peruviana (P.Beauv.) Steud.",
+  "Festuca orthophylla Pilg.",
+  "Parastrephia lucida (Meyen) Cabrera",
+  "Parastrephia quadrangularis (Meyen) Cabrera",
+  "Jarava ichu Ruiz & Pav.",
+  "Cinnagrostis vicunarum (Wedd.) P.M.Peterson, Soreng, Romasch. & Barberá",
+  "Calamagrostis vicunarum (Wedd.) Pilg.",
+  "Senecio nutans Sch.Bip.",
+  "Festuca dolichophylla J.Presl",
+  "Margyricarpus cristatus Britton"
+)
+
+# --- Loop Through Species, Download Data, and Save Individual CSVs ---
+for (species_name in species_list) {
+  message(paste("\n--- Processing:", species_name, "---"))
+  
+  # Download data from GBIF for the current species
+  species_data <- tryCatch({
+    occ_data(scientificName = species_name, hasCoordinate = TRUE, limit = 100000)$data
+  }, error = function(e) {
+    message(paste("Error downloading data for", species_name, ":", e$message))
+    return(NULL) # Return NULL if an error occurs
+  })
+  
+  # Process and save data if download was successful and data exists
+  if (!is.null(species_data) && nrow(species_data) > 0) {
+    # Select desired columns
+    species_data_filtered <- species_data %>%
+      dplyr::select(
+        "acceptedScientificName",
+        "decimalLongitude",
+        "decimalLatitude"
+      )
+    
+    # Sanitize species name for filename (remove parentheses, spaces, commas, etc.)
+    # This helps create valid filenames
+    sanitized_species_name <- gsub("[^A-Za-z0-9_\\-]", "_", species_name)
+    sanitized_species_name <- gsub("__+", "_", sanitized_species_name) # Replace multiple underscores with single
+    sanitized_species_name <- gsub("^_|_$", "", sanitized_species_name) # Remove leading/trailing underscores
+    
+    # Construct the output filename
+    output_filename <- paste0("ocurrencias_", sanitized_species_name, ".csv")
+    output_file_path <- file.path(output_directory, output_filename)
+    
+    # Save the data to a species-specific CSV
+    write.csv(species_data_filtered,
+              file = output_file_path,
+              row.names = FALSE # Avoid writing row numbers as a column
+    )
+    message(paste("Data for", species_name, "saved to:", output_file_path))
+  } else {
+    message(paste("No data or an error occurred for:", species_name, ". No CSV created for this species."))
+  }
+}
+
+message("\n--- All species processing complete. ---")
