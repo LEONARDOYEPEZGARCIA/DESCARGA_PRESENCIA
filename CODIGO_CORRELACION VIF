@@ -1,0 +1,265 @@
+#ESTO SE HACE INDIVIDUALMENTE
+setwd("E:/2025/TESIS ") #cambiar dependencia
+dir()
+
+###Preparation os final dataset 
+requiredPackages <- c(
+  #GENERAL USE LIBRARIES --------#
+  "here", # Library for reproducible workflow
+  "rstudioapi",  # Library for reproducible workflow
+  
+  #EXTRACT ENVIRONMENTAL DATA AND PLOTS
+  "sp", # spatial data
+  "raster", #spatial data
+  "dplyr",
+  "tidyr",
+  "ggplot2",
+  "ggcorrplot",
+  
+  #CORRELATION ANALYSIS
+  "GGally", #correlation analysis
+  "HH" #calculate VIF
+)
+
+install_load_function <- function(pkg){
+  new.pkg <- pkg[!(pkg %in% installed.packages()[, "Package"])]
+  if (length(new.pkg))
+    install.packages(new.pkg, dependencies = TRUE)
+  sapply(pkg, require, character.only = TRUE)
+}
+
+install_load_function(requiredPackages)
+
+###Extract data to PRESENCE ABSENCE (PA) DATA FOR MODELLING
+
+# Load presence-absence data
+load("R/PRESENCIA_R/p_lucida.RData") #nombre del archivo anterior con datos de ausencia
+
+# Specify the path to the .asc file
+file_path <- "CAPAS_ACTUAL"  # Reemplazar esto con el nombre del directiorio con variables ambientales
+
+# Get a list of all .asc files in the directory
+raster_files <- list.files(path = file_path, pattern = "\\.asc$", full.names = TRUE)
+
+# Load all .asc files as a raster stack
+mylayers <- stack(raster_files)
+
+
+#Extract values for every presence-absence data in raster stack
+raster_ex <- raster::extract(x=mylayers, y=PAdata[,c("LON","LAT")], method="bilinear", na.rm=TRUE, df=T) 
+
+colnames(raster_ex)[-1]<-c("AI_ACT",
+                           "CHELSA_BIO1_ACT",
+                           "CHELSA_BIO2_ACT",
+                           "CHELSA_BIO3_ACT",
+                           "CHELSA_BIO4_ACT",
+                           "CHELSA_BIO5_ACT",
+                           "CHELSA_BIO6_ACT",
+                           "CHELSA_BIO7_ACT",
+                           "CHELSA_BIO8_ACT",
+                           "CHELSA_BIO9_ACT",
+                           "CHELSA_BIO10_ACT",
+                           "CHELSA_BIO11_ACT",
+                           "CHELSA_BIO12_ACT",
+                           "CHELSA_BIO13_ACT",
+                           "CHELSA_BIO14_ACT",
+                           "CHELSA_BIO15_ACT",
+                           "CHELSA_BIO16_ACT",
+                           "CHELSA_BIO17_ACT",
+                           "CHELSA_BIO18_ACT",
+                           "CHELSA_BIO19_ACT",
+                           "ET_ACT")
+
+head(raster_ex)
+
+##Merge environment data and presence absence data 
+data <- cbind(PAdata, raster_ex)
+dim(data)
+str(data)
+head(data)
+summary(data)
+
+###Exploratory Plots 
+
+tmp <- data[, c("AI_ACT",
+                "CHELSA_BIO1_ACT",
+                "CHELSA_BIO2_ACT",
+                "CHELSA_BIO3_ACT",
+                "CHELSA_BIO4_ACT",
+                "CHELSA_BIO5_ACT",
+                "CHELSA_BIO6_ACT",
+                "CHELSA_BIO7_ACT",
+                "CHELSA_BIO8_ACT",
+                "CHELSA_BIO9_ACT",
+                "CHELSA_BIO10_ACT",
+                "CHELSA_BIO11_ACT",
+                "CHELSA_BIO12_ACT",
+                "CHELSA_BIO13_ACT",
+                "CHELSA_BIO14_ACT",
+                "CHELSA_BIO15_ACT",
+                "CHELSA_BIO16_ACT",
+                "CHELSA_BIO17_ACT",
+                "CHELSA_BIO18_ACT",
+                "CHELSA_BIO19_ACT",
+                "ET_ACT",
+                "occurrenceStatus")] #nombre del archivo anterior
+tmp <- pivot_longer(data=tmp, cols=everything()) 
+
+#bloxplot exploratory
+ggplot(data=tmp, aes(x=name, y=value)) + 
+  geom_boxplot()+
+  facet_wrap(~name, scales="free")
+
+#plots
+ggplot(data=tmp, aes(x=name, y=value)) + 
+  geom_violin(fill="red", alpha=0.3)+
+  geom_boxplot(width=0.1)+
+  facet_wrap(~name, scales="free")
+
+###Exploratory plots
+tmp <- data[, c("AI_ACT",
+                "CHELSA_BIO1_ACT",
+                "CHELSA_BIO2_ACT",
+                "CHELSA_BIO3_ACT",
+                "CHELSA_BIO4_ACT",
+                "CHELSA_BIO5_ACT",
+                "CHELSA_BIO6_ACT",
+                "CHELSA_BIO7_ACT",
+                "CHELSA_BIO8_ACT",
+                "CHELSA_BIO9_ACT",
+                "CHELSA_BIO10_ACT",
+                "CHELSA_BIO11_ACT",
+                "CHELSA_BIO12_ACT",
+                "CHELSA_BIO13_ACT",
+                "CHELSA_BIO14_ACT",
+                "CHELSA_BIO15_ACT",
+                "CHELSA_BIO16_ACT",
+                "CHELSA_BIO17_ACT",
+                "CHELSA_BIO18_ACT",
+                "CHELSA_BIO19_ACT",
+                "ET_ACT",
+                "occurrenceStatus")]
+
+tmp <- pivot_longer(data=tmp, cols=!occurrenceStatus) 
+
+ggplot(data=tmp, aes(x=factor(occurrenceStatus), y=value, fill=factor(occurrenceStatus), group=factor(occurrenceStatus))) + 
+  geom_violin(alpha=0.3)+
+  geom_boxplot(fill="white", width=0.1)+
+  facet_wrap(~name, scales="free")+
+  theme(legend.position = "bottom",legend.background = element_rect(fill = "white", colour = NA))
+
+ggplot(data=tmp, aes(x=value, fill=factor(occurrenceStatus), group=factor(occurrenceStatus))) + 
+  geom_density(lwd=1, alpha=0.3)+
+  facet_wrap(~name, scales="free")+
+  theme(legend.position = "bottom",legend.background = element_rect(fill = "white", colour = NA))
+
+###Analisis de correlacion entre variables 
+# Define la lista completa de variables que quieres incluir inicialmente
+initial_variables <- c(
+  "AI_ACT",
+  "CHELSA_BIO1_ACT", "CHELSA_BIO2_ACT", "CHELSA_BIO3_ACT",
+  "CHELSA_BIO4_ACT", "CHELSA_BIO5_ACT", "CHELSA_BIO6_ACT",
+  "CHELSA_BIO7_ACT", "CHELSA_BIO8_ACT", "CHELSA_BIO9_ACT",
+  "CHELSA_BIO10_ACT", "CHELSA_BIO11_ACT", "CHELSA_BIO12_ACT",
+  "CHELSA_BIO13_ACT", "CHELSA_BIO14_ACT", "CHELSA_BIO15_ACT",
+  "CHELSA_BIO16_ACT", "CHELSA_BIO17_ACT", "CHELSA_BIO18_ACT",
+  "CHELSA_BIO19_ACT", "ET_ACT"
+)
+
+# Selecciona las variables para el análisis de correlación
+tmp <- data %>% dplyr::select(all_of(initial_variables))
+
+ggpairs(tmp) # Generando matriz de pares de gráficos this takes some minutes
+
+
+mat <- cor(tmp, use="complete.obs") 
+p.mat <- cor_pmat(tmp)
+
+ggcorrplot(mat, type = "lower", lab=T, p.mat = p.mat)
+
+
+#####################
+###VIF analisis 
+##Analiza la multicolinearidad entre las variables la escala de explicacion 
+# VIF = 1 -> variables no correlacionadas 
+# VIF entre 1 a 5 -> variables moderadamente correlacionadas
+# VIF mayores a 5 -> variables fuertemente correlacionadas 
+
+# 1. Seleccionar variables para el cálculo VIF
+# Partimos de las mismas variables usadas para la correlación.
+v.table <- data %>% dplyr::select(all_of(initial_variables))
+
+message("\nCalculando VIF inicial...")
+out.vif <- HH::vif(v.table)
+message("Resultados VIF iniciales (ordenados de menor a mayor):\n")
+print(sort(out.vif))
+
+# ---
+## Remoción Iterativa de Variables Correlacionadas
+# ---
+
+# Define tu umbral VIF. Las variables con un VIF superior a este valor serán eliminadas.
+umbral_vif <- 5 # Puedes ajustar este valor según tus criterios (ej. 10, 3)
+
+# Creamos una lista para almacenar las variables que se irán eliminando
+removed_variables <- c()
+
+# El bucle `while` continuará mientras haya alguna variable con un VIF superior al umbral.
+while(any(out.vif > umbral_vif)) {
+  # Identifica la variable con el VIF más alto.
+  var_to_remove <- names(out.vif)[which.max(out.vif)]
+  
+  message(paste("\nEliminando la variable con VIF más alto:", var_to_remove, "(VIF =", round(max(out.vif), 2), ")"))
+  
+  # Añade la variable a la lista de variables removidas
+  removed_variables <- c(removed_variables, var_to_remove)
+  
+  # Elimina la variable identificada de `v.table`.
+  v.table <- v.table %>%
+    dplyr::select(-all_of(var_to_remove))
+  
+  # Recalcula el VIF para el nuevo conjunto de variables.
+  out.vif <- HH::vif(v.table)
+  
+  message("Nuevos resultados VIF (ordenados de menor a mayor):\n")
+  print(sort(out.vif))
+}
+
+message(paste("\n¡Proceso de remoción completado! Todas las variables restantes tienen VIF por debajo del umbral de", umbral_vif))
+
+# ---
+## Actualización de la Base de Datos Principal y Guardado
+# ---
+
+# Verifica que se hayan removido variables para evitar un error si no se removió ninguna
+if (length(removed_variables) > 0) {
+  message(paste("\nSe han removido todas las variables con VIF alto de la base 'data':\n",
+                paste(removed_variables, collapse = ", ")))
+  # Remueve las variables eliminadas de la base original 'data'
+  data <- data %>% dplyr::select(-all_of(removed_variables))
+} else {
+  message("\nNo se removieron variables con VIF alto de la base 'data' porque todas cumplieron el umbral.")
+}
+
+# Se guarda la data para análisis de modelo
+# Asegúrate de que el directorio 'R' exista o ajusta la ruta si es necesario.
+# Por ejemplo, si quieres guardarlo en tu directorio de trabajo actual, solo usa "data_env_final_actual.RData"
+save_path <- file.path("R", "data_env_final_actual.RData")
+
+# Crear el directorio 'R' si no existe
+if (!dir.exists("R")) {
+  dir.create("R", recursive = TRUE)
+  message("Creado el directorio 'R' para guardar los datos.")
+}
+
+save(list = "data", file = save_path)
+message(paste("La base de datos 'data' actualizada ha sido guardada en:", save_path))
+
+# ---
+## Variables Finales Seleccionadas
+# ---
+
+# Muestra las variables que quedaron después del proceso de eliminación iterativa.
+final_variables <- names(v.table)
+message(paste("\nVariables finales seleccionadas para el análisis (en v.table):", paste(final_variables, collapse = ", ")))
+
